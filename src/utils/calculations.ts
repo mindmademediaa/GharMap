@@ -1,59 +1,175 @@
-import { BUDGET_MULTIPLIER } from '../data/constants';
+import { BUDGET_MULTIPLIER, getRegionConfig } from '../data/constants';
 import {
-  BudgetTier,
-  CityMaterialRates,
   CostBreakdownResult,
   DesignStyle,
   DesignVariation,
   FloorRoomBlock,
+  GlobalRegionCode,
+  PlotSides,
   PlotSpecs,
+  RegionalMaterialRates,
+  StructuralCalculationResult,
 } from '../types/gharmap';
 
-export const MARLA_SQFT = 225; // Standard modern Pakistani residential Marla (225 sq ft)
-
-export function formatPKR(amount: number): string {
-  return `PKR ${Math.round(amount).toLocaleString('en-PK')}`;
+export function formatCurrency(amount: number, regionCode: GlobalRegionCode): string {
+  const reg = getRegionConfig(regionCode);
+  return `${reg.currencySymbol}${Math.round(amount).toLocaleString('en-US')}`;
 }
 
-export function formatCompactPKR(amount: number): string {
-  if (amount >= 10_000_000) {
-    return `PKR ${(amount / 10_000_000).toFixed(2)} Cr`;
+export function formatCompactCurrency(amount: number, regionCode: GlobalRegionCode): string {
+  const reg = getRegionConfig(regionCode);
+  if (amount >= 1_000_000) {
+    return `${reg.currencySymbol}${(amount / 1_000_000).toFixed(2)}M`;
   }
-  if (amount >= 100_000) {
-    return `PKR ${(amount / 100_000).toFixed(1)} Lac`;
+  if (amount >= 1_000) {
+    return `${reg.currencySymbol}${(amount / 1_000).toFixed(1)}K`;
   }
-  return formatPKR(amount);
+  return formatCurrency(amount, regionCode);
 }
 
-/**
- * Exact formula requested:
- * Total Area = Length x Width
- * Covered Area = Total Area x 0.85
- * Cement Bags = Covered Area x 0.7
- * Bricks = Covered Area x 28
- * Steel (kg) = Covered Area x 3.2
- * Sand (cft) = Covered Area x 1.5
- * Bajri (cft) = Covered Area x 1.2
- * Labour Cost = Covered Area x 450 PKR (using editable city labourPerSqFt)
- * Total = (Materials + Labour) + 10% Buffer
- */
+export function calculatePlotAreaSqFt(sides: PlotSides): number {
+  const avgW = (Math.max(10, sides.frontWidth) + Math.max(10, sides.backWidth)) / 2;
+  const avgL = (Math.max(12, sides.leftLength) + Math.max(12, sides.rightLength)) / 2;
+  return Math.round(avgW * avgL);
+}
+
+export function sqFtToSqM(sqFt: number): number {
+  return Number((sqFt * 0.092903).toFixed(1));
+}
+
+export function ftToMeters(ft: number): number {
+  return Number((ft * 0.3048).toFixed(2));
+}
+
+export function calculateInfrastructureSpecs(plot: PlotSpecs): StructuralCalculationResult {
+  const infra = plot.infrastructure;
+  const totalStories = Math.max(1, infra.currentFloors + infra.plannedFutureFloors);
+  const avgW = (plot.sides.frontWidth + plot.sides.backWidth) / 2;
+  const avgL = (plot.sides.leftLength + plot.sides.rightLength) / 2;
+
+  const isCommercial =
+    plot.category === 'Commercial Market' ||
+    plot.category === 'Multi-Story Building' ||
+    plot.category === 'Mixed-Use Infrastructure' ||
+    plot.category === 'Warehouse / Industrial';
+
+  const soilFactor =
+    infra.soilType === 'Soft / Reclaimed'
+      ? 1.35
+      : infra.soilType === 'Sandy / Alluvial'
+        ? 1.15
+        : infra.soilType === 'Hard Rock'
+          ? 0.85
+          : 1.0;
+
+  const seismicBump =
+    infra.seismicZone === 'High (Zone 3-4)'
+      ? 3
+      : infra.seismicZone === 'Moderate (Zone 2)'
+        ? 1.5
+        : 0;
+
+  // Compute recommended column size in inches
+  let colW = 9 + Math.min(12, totalStories * 1.5) + (isCommercial ? 3 : 0);
+  let colD = 12 + Math.min(14, totalStories * 2) + (isCommercial ? 3 : 0) + seismicBump;
+  colW = Math.round(colW / 3) * 3;
+  colD = Math.round(colD / 3) * 3;
+  colW = Math.max(9, Math.min(24, colW));
+  colD = Math.max(12, Math.min(30, colD));
+
+  if (infra.customColumnWidthIn) colW = infra.customColumnWidthIn;
+  if (infra.customColumnDepthIn) colD = infra.customColumnDepthIn;
+
+  const gridSpacing = isCommercial ? 16 : 13.5;
+  const colsX = Math.max(2, Math.ceil(avgW / gridSpacing) + 1);
+  const colsY = Math.max(2, Math.ceil(avgL / gridSpacing) + 1);
+  const estimatedColumnsCount = colsX * colsY;
+
+  const barCount = Math.min(16, 4 + totalStories * 2 + (isCommercial ? 2 : 0));
+  const barDiaMm = totalStories >= 4 ? 20 : totalStories >= 2 ? 16 : 12;
+  const rebarSpec = `${barCount} × Ø${barDiaMm}mm Deformed Bars`;
+  const tieSpec = `Ø10mm Stirrups @ ${infra.seismicZone === 'High (Zone 3-4)' ? '4"' : '6"'} c/c (Confined Zone 4")`;
+
+  const footingType =
+    totalStories >= 4 || infra.soilType === 'Soft / Reclaimed'
+      ? 'Reinforced Mat / Raft Foundation'
+      : 'Isolated RCC Pad Footings + Plinth Tie Beams';
+
+  const padSide = Number(
+    Math.min(11, Math.max(4, (3.5 + totalStories * 0.85) * soilFactor)).toFixed(1),
+  );
+  const footingSizeFt =
+    totalStories >= 4 || infra.soilType === 'Soft / Reclaimed'
+      ? `${Math.round(avgW)}' × ${Math.round(avgL)}' Full Mat (${Math.round(14 + totalStories * 2)}" thick)`
+      : `${padSide}' × ${padSide}' Pad`;
+
+  const footingDepthFt = Number(
+    Math.min(12, Math.max(4, (3.5 + totalStories * 0.7) * soilFactor)).toFixed(1),
+  );
+
+  const beamW = colW >= 12 ? 12 : 9;
+  const beamD = 12 + totalStories * 2 + (isCommercial ? 3 : 0);
+  const beamSizeIn = `${beamW}" × ${Math.min(30, beamD)}"`;
+
+  const slabThicknessIn = totalStories >= 3 || isCommercial ? 6.5 : 5.5;
+  const exteriorWallIn = infra.customWallThicknessIn || (totalStories >= 3 ? 12 : 9);
+  const partitionWallIn = 4.5;
+
+  const concreteGrade =
+    totalStories >= 5
+      ? 'M30 (4500 PSI)'
+      : totalStories >= 3
+        ? 'M25 (3750 PSI)'
+        : 'M20 (3000 PSI)';
+
+  const steelGrade =
+    infra.seismicZone === 'High (Zone 3-4)' || totalStories >= 3
+      ? 'Grade 60 (ASTM A615 · 420 MPa)'
+      : 'Grade 60 / BS4449 B500B';
+
+  const engineeringSummary = `Designed for ${totalStories} total stor${totalStories === 1 ? 'y' : 'ies'} (${infra.currentFloors} built + ${infra.plannedFutureFloors} future expansion) on ${infra.soilType} soil (${infra.seismicZone}). Use ${colW}"×${colD}" RCC columns with ${rebarSpec} and ${footingType}.`;
+
+  return {
+    totalPlannedStories: totalStories,
+    columnWidthIn: colW,
+    columnDepthIn: colD,
+    columnGridSpacingFt: Number((avgW / (colsX - 1)).toFixed(1)),
+    estimatedColumnsCount,
+    rebarSpec,
+    tieSpec,
+    footingType,
+    footingSizeFt,
+    footingDepthFt,
+    beamSizeIn,
+    slabThicknessIn,
+    exteriorWallIn,
+    partitionWallIn,
+    concreteGrade,
+    steelGrade,
+    engineeringSummary,
+  };
+}
+
 export function calculateMaterialCosting(
   plot: PlotSpecs,
-  rates: CityMaterialRates,
+  rates: RegionalMaterialRates,
 ): CostBreakdownResult {
-  const totalArea = Math.max(100, plot.length * plot.width);
-  // If mumty > 0, add slight rooftop covered area factor or keep strictly 0.85 as specified
-  const coveredArea = Math.round(totalArea * 0.85);
-  const marlaArea = Number((totalArea / MARLA_SQFT).toFixed(2));
+  const totalAreaSqFt = Math.max(100, calculatePlotAreaSqFt(plot.sides));
+  const totalAreaSqM = sqFtToSqM(totalAreaSqFt);
+  const floorsMultiplier = Math.max(1, plot.infrastructure.currentFloors);
+  const coveredPerFloor = Math.round(totalAreaSqFt * 0.85);
+  const coveredAreaSqFt = coveredPerFloor * floorsMultiplier;
+  const coveredAreaSqM = sqFtToSqM(coveredAreaSqFt);
+
   const tierFactor = BUDGET_MULTIPLIER[plot.budget] ?? 1.0;
 
-  const cementBags = Math.round(coveredArea * 0.7);
-  const bricksCount = Math.round(coveredArea * 28);
-  const steelKg = Math.round(coveredArea * 3.2);
-  const sandCft = Math.round(coveredArea * 1.5);
-  const bajriCft = Math.round(coveredArea * 1.2);
-  const tilesSqFt = Math.round(coveredArea * 0.9);
-  const paintSqFt = Math.round(coveredArea * 2.4);
+  const cementBags = Math.round(coveredAreaSqFt * 0.7);
+  const bricksCount = Math.round(coveredAreaSqFt * 28);
+  const steelKg = Math.round(coveredAreaSqFt * (3.2 + plot.infrastructure.plannedFutureFloors * 0.45));
+  const sandCft = Math.round(coveredAreaSqFt * 1.5);
+  const bajriCft = Math.round(coveredAreaSqFt * 1.2);
+  const tilesSqFt = Math.round(coveredAreaSqFt * 0.9);
+  const paintSqFt = Math.round(coveredAreaSqFt * 2.4);
 
   const cementCost = Math.round(cementBags * rates.cementPerBag);
   const bricksCost = Math.round(bricksCount * rates.brickPerPc);
@@ -72,15 +188,17 @@ export function calculateMaterialCosting(
     tilesCost +
     paintCost;
 
-  const labourCost = Math.round(coveredArea * rates.labourPerSqFt);
+  const labourCost = Math.round(coveredAreaSqFt * rates.labourPerSqFt);
   const subtotal = materialsTotal + labourCost;
   const buffer10Percent = Math.round(subtotal * 0.1);
   const grandTotal = subtotal + buffer10Percent;
 
   return {
-    totalArea,
-    coveredArea,
-    marlaArea,
+    totalAreaSqFt,
+    totalAreaSqM,
+    coveredAreaSqFt,
+    coveredAreaSqM,
+    floorsMultiplier,
     cementBags,
     cementCost,
     bricksCount,
@@ -103,408 +221,406 @@ export function calculateMaterialCosting(
 }
 
 /**
- * Generates 3 distinct architectural 2D floor plan variations tailored to
- * the user's exact plot width, length, facing, style, and room counters.
+ * Generates 8+ distinct architectural blueprint variations tailored to irregular 4-sided plots,
+ * global project categories (Home, Commercial Market, Multi-Story Building, Warehouse, Mixed-Use),
+ * and explicit engineering wall thickness & opening dimensions.
  */
 export function generateDesignVariations(
   plot: PlotSpecs,
   style: DesignStyle,
+  batchOffset = 0,
 ): DesignVariation[] {
-  const W = Math.max(18, Math.min(120, plot.width || 25));
-  const L = Math.max(24, Math.min(150, plot.length || 45));
+  const maxW = Math.max(plot.sides.frontWidth, plot.sides.backWidth, 20);
+  const maxL = Math.max(plot.sides.leftLength, plot.sides.rightLength, 24);
   const c = plot.counts;
+  const infra = calculateInfrastructureSpecs(plot);
+  const extWall = infra.exteriorWallIn;
+  const intWall = infra.partitionWallIn;
 
-  const makeVariation = (variantIndex: 0 | 1 | 2): DesignVariation => {
+  const isCommercial =
+    plot.category === 'Commercial Market' ||
+    plot.category === 'Multi-Story Building' ||
+    plot.category === 'Mixed-Use Infrastructure' ||
+    plot.category === 'Warehouse / Industrial';
+
+  const archetypes: {
+    key: DesignVariation['layoutArchetype'];
+    title: string;
+    subtitle: string;
+    score: string;
+  }[] = [
+    {
+      key: 'courtyard-center',
+      title: isCommercial ? 'Central Atrium Arcade' : 'Central Courtyard Plan',
+      subtitle: 'Balanced natural ventilation core with perimeter rooms',
+      score: '97% Space Fit',
+    },
+    {
+      key: 'split-wing',
+      title: isCommercial ? 'Twin Retail Wing & Corridor' : 'Split Master & Guest Wing',
+      subtitle: 'Private rear zone separated from active front hall',
+      score: '95% Privacy',
+    },
+    {
+      key: 'open-atrium',
+      title: isCommercial ? 'Open-Span Showroom Grid' : 'Open-Concept Great Room',
+      subtitle: 'Wide unobstructed central span for daylight & circulation',
+      score: '96% Daylight',
+    },
+    {
+      key: 'corridor-arcade',
+      title: isCommercial ? 'Double-Row Market Bazaar' : 'Gallery Spine Layout',
+      subtitle: 'Direct central circulation spine serving all units',
+      score: '94% Efficiency',
+    },
+    {
+      key: 'double-frontage',
+      title: isCommercial ? 'Corner Glass Frontage' : 'Dual-Entry Terrace Layout',
+      subtitle: 'Maximized street-facing exposure and parking bay',
+      score: '95% Street View',
+    },
+    {
+      key: 'l-shaped-garden',
+      title: isCommercial ? 'L-Plaza Courtyard Mall' : 'L-Shaped Garden Wrap',
+      subtitle: 'Outdoor terrace & garden pocket along side elevation',
+      score: '93% Airflow',
+    },
+    {
+      key: 'compact-core',
+      title: isCommercial ? 'Stacked Core Office Block' : 'Compact Plumbing Core',
+      subtitle: 'Grouped wet walls & stair core minimizing MEP run lengths',
+      score: '98% Cost Optimal',
+    },
+    {
+      key: 'executive-suite',
+      title: isCommercial ? 'Executive Anchor + Units' : 'Executive Front Drawing Suite',
+      subtitle: 'Dedicated formal reception / anchor bay at front elevation',
+      score: '94% Zoning',
+    },
+  ];
+
+  const primaryUnitLabel = isCommercial ? 'Shop / Unit' : 'Bedroom';
+  const primaryUnitLabelUr = isCommercial ? 'دکان / یونٹ' : 'بیڈروم';
+  const primaryType = isCommercial ? 'shop' : 'bedroom';
+  const loungeLabel = isCommercial ? 'Main Lobby / Hall' : 'Living Lounge';
+  const loungeLabelUr = isCommercial ? 'مرکزی ہال / لابی' : 'لاؤنج';
+  const kitchenLabel = isCommercial ? 'Pantry / Service' : 'Kitchen';
+  const kitchenLabelUr = isCommercial ? 'پینٹری / سروس' : 'کچن';
+  const sehanLabel = isCommercial ? 'Open Plaza / Atrium' : 'Courtyard / Patio';
+  const sehanLabelUr = isCommercial ? 'اوپن پلازہ' : 'صحن / آنگن';
+  const garageLabel = isCommercial ? 'Parking / Loading' : 'Garage / Porch';
+  const garageLabelUr = isCommercial ? 'پارکنگ بے' : 'گیراج';
+
+  return archetypes.map((arch, idx) => {
     const rooms: FloorRoomBlock[] = [];
-    const halfW = Math.round(W * 0.5);
+    const variantSeed = (idx + batchOffset) % 8;
 
-    // Front zone (bottom of SVG: y from frontStart to L)
-    const hasFrontOpen = c.sehan > 0 || c.garage > 0 || c.baramda > 0;
-    const frontDepth = hasFrontOpen ? Math.round(L * (variantIndex === 1 ? 0.28 : 0.26)) : Math.round(L * 0.16);
-    const backDepth = Math.round((L - frontDepth) * (variantIndex === 2 ? 0.48 : 0.42));
-    const midDepth = L - frontDepth - backDepth;
+    // Normalize zones cleanly inside [0..maxW] x [0..maxL]
+    const backH = Math.round(maxL * (variantSeed % 2 === 0 ? 0.36 : 0.4));
+    const frontH = Math.round(
+      maxL * (c.sehan > 0 || c.garage > 0 || c.baramda > 0 ? 0.26 : 0.18),
+    );
+    const midH = Math.max(8, maxL - backH - frontH);
 
-    // 1) Back zone: Bedrooms + Attached Washrooms + Store
-    const bedCount = Math.max(1, c.rooms);
-    const leftBeds = Math.ceil(bedCount / 2);
+    // 1. Back Zone (Units / Bedrooms + Baths + Store)
+    const unitCount = Math.max(1, c.rooms);
+    const hasBath = c.washrooms > 0;
     const hasStore = c.store > 0;
-    const hasWash = c.washrooms > 0;
 
-    if (variantIndex === 0) {
-      // Classic Pakistani Courtyard-forward Symmetry
-      const bedW = hasWash ? Math.round(W * 0.42) : halfW;
+    if (arch.key === 'corridor-arcade' || arch.key === 'compact-core') {
+      // 3-column rear split: Unit 1 | Bath/Core | Unit 2
+      const sideW = Math.round(maxW * 0.38);
+      const midW = Math.max(5, maxW - sideW * 2);
       rooms.push({
-        id: 'bed-1',
-        label: leftBeds > 1 ? 'Master Bed' : 'Bedroom',
-        urduLabel: 'بیڈروم',
-        type: 'bedroom',
+        id: `u1-${idx}`,
+        label: `${primaryUnitLabel} 1`,
+        urduLabel: `${primaryUnitLabelUr} ۱`,
+        type: primaryType,
         x: 0,
         y: 0,
-        w: bedW,
-        h: backDepth,
+        w: sideW,
+        h: backH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '3.5\'×7\'',
+        windowSizeLabel: '5\'×4\'',
         doorSide: 'bottom',
-        windowSide: 'top',
       });
-      if (hasWash) {
-        const bathW = W - bedW * 2;
-        if (bathW >= 4) {
-          rooms.push({
-            id: 'bath-1',
-            label: 'Bath',
-            urduLabel: 'غسل خانہ',
-            type: 'washroom',
-            x: bedW,
-            y: 0,
-            w: bathW,
-            h: Math.round(backDepth * 0.55),
-            doorSide: 'left',
-          });
-          if (hasStore) {
-            rooms.push({
-              id: 'store-1',
-              label: 'Store',
-              urduLabel: 'اسٹور',
-              type: 'store',
-              x: bedW,
-              y: Math.round(backDepth * 0.55),
-              w: bathW,
-              h: backDepth - Math.round(backDepth * 0.55),
-              doorSide: 'bottom',
-            });
-          } else {
-            rooms.push({
-              id: 'bath-2',
-              label: 'Bath 2',
-              urduLabel: 'باتھ روم',
-              type: 'washroom',
-              x: bedW,
-              y: Math.round(backDepth * 0.55),
-              w: bathW,
-              h: backDepth - Math.round(backDepth * 0.55),
-              doorSide: 'right',
-            });
-          }
-          rooms.push({
-            id: 'bed-2',
-            label: bedCount > 1 ? 'Bedroom 2' : 'Guest Room',
-            urduLabel: 'مہمان خانہ',
-            type: 'bedroom',
-            x: bedW + bathW,
-            y: 0,
-            w: bedW,
-            h: backDepth,
-            doorSide: 'bottom',
-            windowSide: 'top',
-          });
-        } else {
-          rooms.push({
-            id: 'bed-2',
-            label: 'Bedroom 2',
-            urduLabel: 'بیڈروم ۲',
-            type: 'bedroom',
-            x: bedW,
-            y: 0,
-            w: W - bedW,
-            h: backDepth,
-            doorSide: 'bottom',
-            windowSide: 'top',
-          });
-        }
-      } else {
-        rooms.push({
-          id: 'bed-2',
-          label: 'Bedroom 2',
-          urduLabel: 'بیڈروم ۲',
-          type: 'bedroom',
-          x: bedW,
-          y: 0,
-          w: W - bedW,
-          h: backDepth,
-          doorSide: 'bottom',
-          windowSide: 'top',
-        });
-      }
-    } else if (variantIndex === 1) {
-      // Modern Split Suite Layout
-      const suiteW = Math.round(W * 0.56);
       rooms.push({
-        id: 'bed-1',
-        label: 'Master Suite',
-        urduLabel: 'ماسٹر بیڈ',
-        type: 'bedroom',
+        id: `core-${idx}`,
+        label: hasStore ? 'WC & Store' : 'Restroom Core',
+        urduLabel: 'باتھ اور اسٹور',
+        type: 'washroom',
+        x: sideW,
+        y: 0,
+        w: midW,
+        h: backH,
+        wallThicknessIn: intWall,
+        doorSizeLabel: '2.5\'×7\'',
+        doorSide: 'bottom',
+      });
+      rooms.push({
+        id: `u2-${idx}`,
+        label: unitCount > 1 ? `${primaryUnitLabel} 2` : isCommercial ? 'Office Suite' : 'Guest Suite',
+        urduLabel: `${primaryUnitLabelUr} ۲`,
+        type: primaryType,
+        x: sideW + midW,
+        y: 0,
+        w: maxW - sideW - midW,
+        h: backH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '3.5\'×7\'',
+        windowSizeLabel: '5\'×4\'',
+        doorSide: 'bottom',
+      });
+    } else {
+      const leftW = Math.round(maxW * (variantSeed === 1 ? 0.56 : 0.5));
+      const rightW = maxW - leftW;
+      const splitBathH = hasBath ? Math.max(5, Math.round(backH * 0.36)) : 0;
+
+      rooms.push({
+        id: `u1-${idx}`,
+        label: isCommercial ? 'Anchor Unit A' : 'Master Suite',
+        urduLabel: isCommercial ? 'یونٹ A' : 'ماسٹر بیڈروم',
+        type: primaryType,
         x: 0,
         y: 0,
-        w: suiteW,
-        h: backDepth,
+        w: leftW,
+        h: backH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '3.5\'×7\'',
+        windowSizeLabel: '6\'×4.5\'',
         doorSide: 'bottom',
-        windowSide: 'top',
       });
+
       rooms.push({
-        id: 'bed-2',
-        label: bedCount >= 2 ? 'Bedroom 2' : 'Study',
-        urduLabel: 'بیڈروم ۲',
-        type: 'bedroom',
-        x: suiteW,
+        id: `u2-${idx}`,
+        label: unitCount >= 2 ? `${primaryUnitLabel} 2` : isCommercial ? 'Back Office' : 'Bedroom 2',
+        urduLabel: `${primaryUnitLabelUr} ۲`,
+        type: primaryType,
+        x: leftW,
         y: 0,
-        w: W - suiteW,
-        h: Math.round(backDepth * 0.65),
+        w: rightW,
+        h: backH - splitBathH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '3.5\'×7\'',
+        windowSizeLabel: '5\'×4\'',
         doorSide: 'left',
-        windowSide: 'top',
       });
-      if (hasWash) {
+
+      if (hasBath) {
         rooms.push({
-          id: 'bath-1',
-          label: 'Bathrooms',
+          id: `bath-${idx}`,
+          label: `${c.washrooms}× Bath`,
           urduLabel: 'باتھ رومز',
           type: 'washroom',
-          x: suiteW,
-          y: Math.round(backDepth * 0.65),
-          w: W - suiteW,
-          h: backDepth - Math.round(backDepth * 0.65),
+          x: leftW,
+          y: backH - splitBathH,
+          w: rightW,
+          h: splitBathH,
+          wallThicknessIn: intWall,
+          doorSizeLabel: '2.5\'×7\'',
           doorSide: 'left',
         });
       }
-    } else {
-      // Corner Atrium / Cross-Ventilated Layout
-      const leftCol = Math.round(W * 0.48);
-      rooms.push({
-        id: 'bed-1',
-        label: 'Bedroom 1',
-        urduLabel: 'بیڈروم ۱',
-        type: 'bedroom',
-        x: 0,
-        y: 0,
-        w: leftCol,
-        h: backDepth,
-        doorSide: 'right',
-        windowSide: 'top',
-      });
-      rooms.push({
-        id: 'bed-2',
-        label: bedCount >= 2 ? 'Bedroom 2' : 'Drawing',
-        urduLabel: 'ڈرائنگ روم',
-        type: 'bedroom',
-        x: leftCol,
-        y: 0,
-        w: W - leftCol,
-        h: Math.round(backDepth * 0.72),
-        doorSide: 'bottom',
-        windowSide: 'top',
-      });
-      rooms.push({
-        id: 'bath-1',
-        label: hasStore ? 'Bath & Store' : 'Washroom',
-        urduLabel: 'باتھ اور اسٹور',
-        type: 'washroom',
-        x: leftCol,
-        y: Math.round(backDepth * 0.72),
-        w: W - leftCol,
-        h: backDepth - Math.round(backDepth * 0.72),
-        doorSide: 'left',
-      });
     }
 
-    // 2) Middle Zone: Lounge + Kitchen (+ extra room if >= 3 rooms)
-    const loungeW = variantIndex === 2 ? Math.round(W * 0.62) : Math.round(W * 0.58);
-    const kitchenW = W - loungeW;
-    const midY = backDepth;
+    // 2. Middle Zone (Lounge / Lobby + Kitchen / Extra Units)
+    const midY = backH;
+    const swapMid = variantSeed % 2 === 1;
+    const loungeRatio = arch.key === 'open-atrium' ? 0.68 : 0.58;
+    const loungeW = Math.round(maxW * loungeRatio);
+    const kitchenW = maxW - loungeW;
 
-    if (c.lounge > 0 && c.kitchen > 0) {
+    if (c.rooms >= 3 && arch.key === 'split-wing') {
+      const thirdW = Math.round(maxW * 0.34);
+      const midLoungeW = maxW - thirdW * 2;
       rooms.push({
-        id: 'lounge-1',
-        label: 'Lounge / TV',
-        urduLabel: 'لاؤنج',
-        type: 'lounge',
-        x: variantIndex === 1 ? kitchenW : 0,
+        id: `u3-${idx}`,
+        label: `${primaryUnitLabel} 3`,
+        urduLabel: `${primaryUnitLabelUr} ۳`,
+        type: primaryType,
+        x: 0,
         y: midY,
-        w: loungeW,
-        h: midDepth,
-        doorSide: 'bottom',
-        windowSide: variantIndex === 1 ? 'right' : 'left',
+        w: thirdW,
+        h: midH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '3.5\'×7\'',
+        windowSizeLabel: '4\'×4\'',
+        doorSide: 'right',
       });
       rooms.push({
-        id: 'kitchen-1',
-        label: 'Kitchen',
-        urduLabel: 'باورچی خانہ',
-        type: 'kitchen',
-        x: variantIndex === 1 ? 0 : loungeW,
+        id: `lounge-${idx}`,
+        label: loungeLabel,
+        urduLabel: loungeLabelUr,
+        type: isCommercial ? 'lobby' : 'lounge',
+        x: thirdW,
         y: midY,
-        w: kitchenW,
-        h: midDepth,
-        doorSide: variantIndex === 1 ? 'right' : 'left',
-        windowSide: variantIndex === 1 ? 'left' : 'right',
+        w: midLoungeW,
+        h: midH,
+        wallThicknessIn: intWall,
+        doorSizeLabel: '4\'×7\'',
+        doorSide: 'bottom',
+      });
+      rooms.push({
+        id: `kitchen-${idx}`,
+        label: kitchenLabel,
+        urduLabel: kitchenLabelUr,
+        type: 'kitchen',
+        x: thirdW + midLoungeW,
+        y: midY,
+        w: maxW - thirdW - midLoungeW,
+        h: midH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '3\'×7\'',
+        windowSizeLabel: '4\'×3.5\'',
+        doorSide: 'left',
       });
     } else if (c.kitchen > 0) {
       rooms.push({
-        id: 'kitchen-1',
-        label: 'Kitchen & Dining',
-        urduLabel: 'کچن و ڈائننگ',
+        id: `lounge-${idx}`,
+        label: loungeLabel,
+        urduLabel: loungeLabelUr,
+        type: isCommercial ? 'lobby' : 'lounge',
+        x: swapMid ? kitchenW : 0,
+        y: midY,
+        w: loungeW,
+        h: midH,
+        wallThicknessIn: intWall,
+        doorSizeLabel: '4\'×7\'',
+        windowSizeLabel: '6\'×4.5\'',
+        doorSide: 'bottom',
+      });
+      rooms.push({
+        id: `kitchen-${idx}`,
+        label: kitchenLabel,
+        urduLabel: kitchenLabelUr,
         type: 'kitchen',
-        x: 0,
+        x: swapMid ? 0 : loungeW,
         y: midY,
-        w: W,
-        h: midDepth,
-        doorSide: 'bottom',
+        w: kitchenW,
+        h: midH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '3\'×7\'',
+        windowSizeLabel: '4\'×3.5\'',
+        doorSide: swapMid ? 'right' : 'left',
       });
     } else {
       rooms.push({
-        id: 'lounge-1',
-        label: 'Central Lounge',
-        urduLabel: 'مرکزی لاؤنج',
-        type: 'lounge',
+        id: `lounge-${idx}`,
+        label: loungeLabel,
+        urduLabel: loungeLabelUr,
+        type: isCommercial ? 'lobby' : 'lounge',
         x: 0,
         y: midY,
-        w: W,
-        h: midDepth,
+        w: maxW,
+        h: midH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '5\'×8\'',
+        windowSizeLabel: '8\'×5\'',
         doorSide: 'bottom',
       });
     }
 
-    // 3) Front Zone: Sehan / Courtyard, Baramda, Garage, Mumty stair indicator
-    const frontY = backDepth + midDepth;
-    const showSehan = c.sehan > 0;
-    const showGarage = c.garage > 0;
-    const showBaramda = c.baramda > 0;
+    // 3. Front Zone (Courtyard / Parking / Front Retail / Baramda)
+    const frontY = backH + midH;
+    const frontSplit = Math.round(maxW * (arch.key === 'l-shaped-garden' ? 0.42 : 0.54));
 
-    if (showSehan && showGarage) {
-      const sehanW = Math.round(W * 0.55);
+    if (c.sehan > 0 && c.garage > 0) {
       rooms.push({
-        id: 'sehan-1',
-        label: 'Sehan (Courtyard)',
-        urduLabel: 'صحن',
+        id: `sehan-${idx}`,
+        label: sehanLabel,
+        urduLabel: sehanLabelUr,
         type: 'sehan',
-        x: 0,
+        x: swapMid ? maxW - frontSplit : 0,
         y: frontY,
-        w: sehanW,
-        h: frontDepth,
+        w: frontSplit,
+        h: frontH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '4\'×7\' Gate',
         doorSide: 'bottom',
       });
       rooms.push({
-        id: 'garage-1',
-        label: showBaramda ? 'Garage & Baramda' : 'Car Porch',
-        urduLabel: 'گیراج / برآمدہ',
+        id: `garage-${idx}`,
+        label: garageLabel,
+        urduLabel: garageLabelUr,
         type: 'garage',
-        x: sehanW,
+        x: swapMid ? 0 : frontSplit,
         y: frontY,
-        w: W - sehanW,
-        h: frontDepth,
+        w: maxW - frontSplit,
+        h: frontH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '10\'×8\' Gate',
         doorSide: 'bottom',
       });
-    } else if (showSehan) {
-      const sehanW = showBaramda ? Math.round(W * 0.62) : W;
+    } else if (c.garage > 0) {
       rooms.push({
-        id: 'sehan-1',
-        label: 'Sehan (Courtyard)',
-        urduLabel: 'صحن',
-        type: 'sehan',
-        x: 0,
-        y: frontY,
-        w: sehanW,
-        h: frontDepth,
-        doorSide: 'bottom',
-      });
-      if (showBaramda) {
-        rooms.push({
-          id: 'baramda-1',
-          label: 'Baramda',
-          urduLabel: 'برآمدہ',
-          type: 'baramda',
-          x: sehanW,
-          y: frontY,
-          w: W - sehanW,
-          h: frontDepth,
-          doorSide: 'bottom',
-        });
-      }
-    } else if (showGarage) {
-      const garageW = Math.round(W * 0.48);
-      rooms.push({
-        id: 'baramda-1',
-        label: showBaramda ? 'Baramda' : 'Drawing / Porch',
-        urduLabel: 'برآمدہ',
+        id: `baramda-${idx}`,
+        label: isCommercial ? 'Front Display Bay' : 'Entry Porch',
+        urduLabel: isCommercial ? 'فرنٹ ڈسپلے' : 'برآمدہ',
         type: 'baramda',
         x: 0,
         y: frontY,
-        w: garageW,
-        h: frontDepth,
+        w: frontSplit,
+        h: frontH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '4\'×7\'',
         doorSide: 'bottom',
       });
       rooms.push({
-        id: 'garage-1',
-        label: 'Car Garage',
-        urduLabel: 'کار گیراج',
+        id: `garage-${idx}`,
+        label: garageLabel,
+        urduLabel: garageLabelUr,
         type: 'garage',
-        x: garageW,
+        x: frontSplit,
         y: frontY,
-        w: W - garageW,
-        h: frontDepth,
+        w: maxW - frontSplit,
+        h: frontH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '10\'×8\' Gate',
+        doorSide: 'bottom',
+      });
+    } else if (c.sehan > 0) {
+      rooms.push({
+        id: `sehan-${idx}`,
+        label: sehanLabel,
+        urduLabel: sehanLabelUr,
+        type: 'sehan',
+        x: 0,
+        y: frontY,
+        w: maxW,
+        h: frontH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '6\'×7\' Main Gate',
         doorSide: 'bottom',
       });
     } else {
       rooms.push({
-        id: 'baramda-1',
-        label: 'Front Veranda',
-        urduLabel: 'برآمدہ',
+        id: `baramda-${idx}`,
+        label: isCommercial ? 'Storefront Arcade' : 'Front Terrace',
+        urduLabel: isCommercial ? 'شاپ فرنٹ' : 'فرنٹ ٹیرس',
         type: 'baramda',
         x: 0,
         y: frontY,
-        w: W,
-        h: frontDepth,
+        w: maxW,
+        h: frontH,
+        wallThicknessIn: extWall,
+        doorSizeLabel: '6\'×8\'',
         doorSide: 'bottom',
       });
     }
 
-    const facingNote =
-      plot.facing === 'North'
-        ? 'North-facing orientation minimizes harsh afternoon summer heat.'
-        : plot.facing === 'East'
-          ? 'East-facing front brings soft morning sunlight into the Lounge.'
-          : plot.facing === 'West'
-            ? 'West-facing shading via Jali & Baramda reduces evening heat gain.'
-            : 'South-facing orientation delivers steady winter daylight.';
-
-    const titles = [
-      `${style} Courtyard Classic`,
-      `${style} Open-Flow Plan`,
-      `${style} Cross-Ventilated`,
-    ];
-
-    const subtitles = [
-      'Balanced Sehan airflow & private bedroom wing',
-      'Wide central TV Lounge with direct kitchen island',
-      'Maximized natural light & compact circulation',
-    ];
-
-    const aiNotes = [
-      `Good ventilation via ${c.sehan > 0 ? 'Sehan courtyard' : 'front Baramda'}. ${facingNote}`,
-      `Lounge has optimal natural light with ${c.rooms} private sleeping zones and ${c.washrooms} baths.`,
-      `Compact plumbing stack cuts piping cost by ~12% in ${plot.city} construction rates.`,
-    ];
-
-    const aiNotesUr = [
-      `صحن کے ذریعے بہترین ہوا کی گزرگاہ اور روشنی کا انتظام۔ ${plot.city} کے موسم کے مطابق ڈیزائن۔`,
-      `لاؤنج میں قدرتی روشنی اور کچن کے ساتھ آسان رسائی۔`,
-      `باتھ رومز اور کچن کی پائپ لائن ایک ساتھ رکھنے سے تعمیراتی لاگت میں بچت۔`,
-    ];
-
-    const scores = ['96% Space Fit', '94% Daylight', '93% Cost Optimal'];
+    const aiNote = `${arch.title} (${style}): ${infra.columnWidthIn}"×${infra.columnDepthIn}" RCC columns support ${infra.totalPlannedStories} total stories with ${extWall}" exterior & ${intWall}" interior walls.`;
+    const aiNoteUr = `${arch.title}: ${infra.totalPlannedStories} منزلوں کے لیے ${infra.columnWidthIn}"×${infra.columnDepthIn}" پلرز اور ${extWall}" بیرونی دیواروں کے ساتھ ڈیزائن۔`;
 
     return {
-      id: `var-${variantIndex + 1}`,
-      name: titles[variantIndex],
-      subtitle: subtitles[variantIndex],
-      aiNote: aiNotes[variantIndex],
-      aiNoteUr: aiNotesUr[variantIndex],
-      efficiencyScore: scores[variantIndex],
+      id: `var-${idx + 1 + batchOffset}`,
+      name: arch.title,
+      subtitle: arch.subtitle,
+      aiNote,
+      aiNoteUr,
+      efficiencyScore: arch.score,
+      layoutArchetype: arch.key,
       rooms,
     };
-  };
-
-  return [makeVariation(0), makeVariation(1), makeVariation(2)];
-}
-
-export function getBudgetLabel(budget: BudgetTier): string {
-  if (budget === 'Low') return 'Economy Gray + Standard Finish';
-  if (budget === 'Premium') return 'A+ Luxury Turnkey Finish';
-  return 'Standard Modern Pakistani Finish';
+  });
 }

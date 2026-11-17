@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Phone, ShieldCheck, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Phone, ShieldCheck, ArrowRight, CheckCircle2, Globe } from 'lucide-react';
 import { Logo } from './Logo';
 import { Language, UserProfile } from '../types/gharmap';
 
@@ -9,35 +9,34 @@ interface AuthScreenProps {
   onAuthenticated: (user: UserProfile) => void;
 }
 
+const COUNTRY_CODES = ['+1', '+44', '+971', '+966', '+49', '+61', '+91', '+92'];
+
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   language,
   onToggleLanguage,
   onAuthenticated,
 }) => {
   const [mode, setMode] = useState<'options' | 'phone-input' | 'otp-verify'>('options');
-  const [name, setName] = useState('Ahmed Raza');
-  const [phone, setPhone] = useState('0300 5421890');
+  const [name, setName] = useState('Alex Morgan');
+  const [countryCode, setCountryCode] = useState('+1');
+  const [phone, setPhone] = useState('555 019 4820');
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
 
   const handleGoogleSignIn = () => {
     onAuthenticated({
-      name: 'Ahmed Raza',
-      email: 'ahmed.raza@gharmap.pk',
+      name: 'Alex Morgan',
+      email: 'alex.morgan@gharmap.ai',
       authMethod: 'google',
-      companyName: 'Al-Noor Builders & Associates',
+      companyName: 'GharMap Studio & Associates',
     });
   };
 
   const handleSendOtp = (e: React.FormEvent) => {
     e.preventDefault();
     const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length < 10) {
-      setError(
-        language === 'ur'
-          ? 'براہ کرم درست پاکستانی موبائل نمبر درج کریں'
-          : 'Please enter a valid 10 or 11 digit Pakistani mobile number.',
-      );
+    if (cleaned.length < 7) {
+      setError('Please enter a valid mobile number (at least 7 digits).');
       return;
     }
     setError('');
@@ -52,8 +51,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       return;
     }
     onAuthenticated({
-      name: name.trim() || 'Builder User',
-      phone: `+92 ${phone.replace(/^0/, '')}`,
+      name: name.trim() || 'Developer User',
+      phone: `${countryCode} ${phone.replace(/^0/, '')}`,
       authMethod: 'phone',
     });
   };
@@ -66,7 +65,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <Logo size={44} />
             <div>
               <h1 className="text-xl font-bold text-[#112A1E]">GharMap AI</h1>
-              <p className="text-xs text-[#546E60]">Construction House Design</p>
+              <p className="text-xs text-[#546E60] flex items-center gap-1">
+                <Globe className="w-3 h-3 text-[#0E9F5D]" />
+                Global Architecture &amp; Infra
+              </p>
             </div>
           </div>
           <button
@@ -82,12 +84,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           <div className="space-y-4">
             <div className="bg-[#E7F6EE] rounded-2xl p-4">
               <h2 className="text-lg font-bold text-[#112A1E]">
-                {language === 'ur' ? 'خوش آمدید!' : 'Welcome to GharMap AI'}
+                {language === 'ur' ? 'خوش آمدید!' : 'Global Design & Engineering Studio'}
               </h2>
               <p className="text-sm text-[#405B4D] mt-1">
                 {language === 'ur'
-                  ? 'لاہور، اسلام آباد، کراچی اور پشاور کے لیے فوری 2D نقشے، 3D ویو اور PKR تخمینہ حاصل کریں۔'
-                  : 'Create instant 2D floor plans, interactive 3D elevations, and accurate PKR material BOQs for Pakistan.'}
+                  ? 'دنیا کے کسی بھی ملک سے گھر، مارکیٹ، بلڈنگز اور اسٹرکچر کے 2D اور 3D نقشے بالکل مفت بنائیں۔'
+                  : 'Design homes, commercial markets, and multi-story buildings anywhere in the world — 100% free access to all tools.'}
               </p>
             </div>
 
@@ -124,7 +126,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             >
               <Phone className="w-4 h-4" />
               <span>
-                {language === 'ur' ? 'فون نمبر OTP کے ساتھ لاگ ان' : 'Sign in with Phone OTP (+92)'}
+                {language === 'ur' ? 'فون نمبر OTP کے ساتھ لاگ ان' : 'Sign in with International Phone'}
               </span>
             </button>
 
@@ -133,13 +135,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 type="button"
                 onClick={() =>
                   onAuthenticated({
-                    name: 'Guest Builder',
+                    name: 'Architect / Builder',
                     authMethod: 'guest',
                   })
                 }
                 className="text-sm font-medium text-[#546E60] hover:text-[#0E9F5D] py-2 px-4 min-h-[44px]"
               >
-                {language === 'ur' ? 'مہمان کے طور پر جاری رکھیں' : 'Continue as Guest →'}
+                {language === 'ur' ? 'فوری طور پر اسٹوڈیو کھولیں' : 'Enter Studio Directly →'}
               </button>
             </div>
           </div>
@@ -149,29 +151,37 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           <form onSubmit={handleSendOtp} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-[#405B4D] mb-1.5">
-                {language === 'ur' ? 'آپ کا نام' : 'Full Name'}
+                Full Name
               </label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Bilal Khan"
+                placeholder="e.g. Alex Morgan"
                 className="w-full min-h-[48px] px-4 rounded-xl bg-[#F4F8F5] border border-[#DCE8E1] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#0E9F5D]"
               />
             </div>
             <div>
               <label className="block text-xs font-semibold text-[#405B4D] mb-1.5">
-                {language === 'ur' ? 'پاکستانی موبائل نمبر' : 'Pakistani Mobile Number'}
+                International Phone Number
               </label>
               <div className="flex items-center gap-2">
-                <span className="min-h-[48px] px-3.5 rounded-xl bg-[#E7F6EE] border border-[#DCE8E1] text-sm font-semibold text-[#0E9F5D] flex items-center">
-                  +92
-                </span>
+                <select
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value)}
+                  className="min-h-[48px] px-3 rounded-xl bg-[#E7F6EE] border border-[#DCE8E1] text-sm font-bold text-[#0E9F5D]"
+                >
+                  {COUNTRY_CODES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
                 <input
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="300 1234567"
+                  placeholder="Phone number"
                   className="flex-1 min-h-[48px] px-4 rounded-xl bg-[#F4F8F5] border border-[#DCE8E1] text-sm font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-[#0E9F5D]"
                 />
               </div>
@@ -181,7 +191,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               type="submit"
               className="w-full min-h-[50px] rounded-2xl bg-[#0E9F5D] hover:bg-[#0A7D49] text-white font-semibold text-sm flex items-center justify-center gap-2"
             >
-              <span>{language === 'ur' ? 'OTP کوڈ بھیجیں' : 'Send OTP Code'}</span>
+              <span>Send OTP Code</span>
               <ArrowRight className="w-4 h-4" />
             </button>
             <button
@@ -189,7 +199,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               onClick={() => setMode('options')}
               className="w-full text-xs font-semibold text-[#546E60] py-2 min-h-[40px]"
             >
-              {language === 'ur' ? 'واپس جائیں' : '← Back to login options'}
+              ← Back to login options
             </button>
           </form>
         )}
@@ -199,8 +209,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <div className="flex items-start gap-3 bg-[#E7F6EE] p-3.5 rounded-2xl text-xs text-[#1D4E35]">
               <ShieldCheck className="w-5 h-5 text-[#0E9F5D] shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold">OTP Sent to +92 {phone.replace(/^0/, '')}</p>
-                <p className="mt-0.5 text-[#405B4D]">Demo verification code pre-filled: 1234</p>
+                <p className="font-semibold">
+                  OTP Sent to {countryCode} {phone.replace(/^0/, '')}
+                </p>
+                <p className="mt-0.5 text-[#405B4D]">Verification code pre-filled: 1234</p>
               </div>
             </div>
             <div>
@@ -221,7 +233,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               className="w-full min-h-[50px] rounded-2xl bg-[#0E9F5D] hover:bg-[#0A7D49] text-white font-semibold text-sm flex items-center justify-center gap-2"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{language === 'ur' ? 'تصدیق کریں اور داخل ہوں' : 'Verify & Open Dashboard'}</span>
+              <span>Verify &amp; Open Studio</span>
             </button>
             <button
               type="button"

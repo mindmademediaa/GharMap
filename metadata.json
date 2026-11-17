@@ -1,6 +1,6 @@
 {
   "name": "GharMap AI",
-  "description": "Construction House Design • AI-Powered 2D Floor Plans, 3D House View & PKR Material Costing for Pakistan.",
+  "description": "Global AI Architecture, Building, Market & Infrastructure Design Platform — 2D Blueprints, 3D Visualization, Structural Engineering & Costing.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

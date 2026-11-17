@@ -1,13 +1,14 @@
 import {
-  DEFAULT_CITY_RATES,
   DEFAULT_CUSTOMIZATION,
+  DEFAULT_REGION_RATES,
   SEEDED_CLIENT_LEADS,
 } from '../data/constants';
 import {
-  AllCityRates,
+  AllRegionRates,
   ClientLead,
   Language,
   PlanTier,
+  PlotSpecs,
   Project,
   UnitType,
   UserProfile,
@@ -15,22 +16,23 @@ import {
 import { generateDesignVariations } from './calculations';
 
 const KEYS = {
-  PROJECTS: 'gharmap_projects_v1',
-  USER: 'gharmap_user_v1',
-  PLAN: 'gharmap_plan_v1',
-  RATES: 'gharmap_city_rates_v1',
-  LANG: 'gharmap_lang_v1',
-  UNIT: 'gharmap_unit_v1',
-  LEADS: 'gharmap_client_leads_v1',
+  PROJECTS: 'gharmap_global_projects_v2',
+  USER: 'gharmap_global_user_v2',
+  PLAN: 'gharmap_global_plan_v2',
+  RATES: 'gharmap_global_rates_v2',
+  LANG: 'gharmap_global_lang_v2',
+  UNIT: 'gharmap_global_unit_v2',
+  LEADS: 'gharmap_global_leads_v2',
 };
 
 export function getSeededProjects(): Project[] {
-  const plot1 = {
-    length: 45,
-    width: 25,
-    facing: 'North' as const,
-    city: 'Lahore' as const,
-    budget: 'Medium' as const,
+  const plot1: PlotSpecs = {
+    sides: { frontWidth: 34, backWidth: 30, leftLength: 52, rightLength: 48 },
+    isIrregular: true,
+    facing: 'North',
+    region: 'US',
+    category: 'Residential Home',
+    budget: 'Standard',
     counts: {
       rooms: 3,
       washrooms: 2,
@@ -42,54 +44,68 @@ export function getSeededProjects(): Project[] {
       store: 1,
       mumty: 1,
     },
+    infrastructure: {
+      currentFloors: 2,
+      plannedFutureFloors: 1,
+      soilType: 'Firm Clay / Loam',
+      seismicZone: 'Moderate (Zone 2)',
+    },
   };
 
-  const plot2 = {
-    length: 65,
-    width: 35,
-    facing: 'East' as const,
-    city: 'Peshawar' as const,
-    budget: 'Premium' as const,
+  const plot2: PlotSpecs = {
+    sides: { frontWidth: 48, backWidth: 48, leftLength: 65, rightLength: 65 },
+    isIrregular: false,
+    facing: 'East',
+    region: 'UAE',
+    category: 'Commercial Market',
+    budget: 'Luxury',
     counts: {
-      rooms: 4,
+      rooms: 6,
       washrooms: 3,
       kitchen: 1,
       lounge: 1,
       baramda: 1,
-      garage: 1,
+      garage: 2,
       sehan: 1,
       store: 1,
       mumty: 1,
+    },
+    infrastructure: {
+      currentFloors: 3,
+      plannedFutureFloors: 2,
+      soilType: 'Sandy / Alluvial',
+      seismicZone: 'Moderate (Zone 2)',
     },
   };
 
   return [
     {
-      id: 'proj-lahore-5marla',
-      name: '5 Marla Residence - Lahore',
-      createdAt: '2026-10-12',
+      id: 'proj-villa-irregular',
+      name: 'Irregular Corner Modern Residence',
+      createdAt: '2026-10-18',
       updatedAt: '2026-11-15',
-      progress: 40,
+      progress: 45,
       plot: plot1,
-      style: 'Pakistani',
-      variations: generateDesignVariations(plot1, 'Pakistani'),
+      style: 'Modern Contemporary',
+      variations: generateDesignVariations(plot1, 'Modern Contemporary'),
       selectedVariationId: 'var-1',
       customization: { ...DEFAULT_CUSTOMIZATION },
     },
     {
-      id: 'proj-peshawar-10marla',
-      name: '10 Marla Courtyard Villa - Peshawar',
-      createdAt: '2026-11-01',
+      id: 'proj-plaza-market',
+      name: '3-Story Commercial Market & Plaza',
+      createdAt: '2026-11-04',
       updatedAt: '2026-11-16',
-      progress: 75,
+      progress: 70,
       plot: plot2,
-      style: 'Pakistani',
-      variations: generateDesignVariations(plot2, 'Pakistani'),
-      selectedVariationId: 'var-1',
+      style: 'Commercial Glass',
+      variations: generateDesignVariations(plot2, 'Commercial Glass'),
+      selectedVariationId: 'var-4',
       customization: {
         ...DEFAULT_CUSTOMIZATION,
-        wallColor: 'sand',
-        frontDoor: 'Walnut Timber',
+        wallColor: 'slate-charcoal',
+        exteriorCladding: 'Glass Curtain',
+        gateDesign: 'Commercial Glass & Steel',
       },
     },
   ];
@@ -114,7 +130,7 @@ export function saveProjects(projects: Project[]): void {
   try {
     localStorage.setItem(KEYS.PROJECTS, JSON.stringify(projects));
   } catch {
-    // ignore storage quota errors
+    // ignore storage errors
   }
 }
 
@@ -139,14 +155,9 @@ export function saveUser(user: UserProfile | null): void {
   }
 }
 
+// Everything is 100% unlocked & free right now per user request
 export function loadPlan(): PlanTier {
-  try {
-    const raw = localStorage.getItem(KEYS.PLAN);
-    if (raw === 'free' || raw === 'pro' || raw === 'premium') return raw;
-    return 'free';
-  } catch {
-    return 'free';
-  }
+  return 'premium';
 }
 
 export function savePlan(plan: PlanTier): void {
@@ -157,17 +168,17 @@ export function savePlan(plan: PlanTier): void {
   }
 }
 
-export function loadCityRates(): AllCityRates {
+export function loadRegionRates(): AllRegionRates {
   try {
     const raw = localStorage.getItem(KEYS.RATES);
-    if (!raw) return DEFAULT_CITY_RATES;
-    return { ...DEFAULT_CITY_RATES, ...(JSON.parse(raw) as Partial<AllCityRates>) };
+    if (!raw) return DEFAULT_REGION_RATES;
+    return { ...DEFAULT_REGION_RATES, ...(JSON.parse(raw) as Partial<AllRegionRates>) };
   } catch {
-    return DEFAULT_CITY_RATES;
+    return DEFAULT_REGION_RATES;
   }
 }
 
-export function saveCityRates(rates: AllCityRates): void {
+export function saveRegionRates(rates: AllRegionRates): void {
   try {
     localStorage.setItem(KEYS.RATES, JSON.stringify(rates));
   } catch {
@@ -194,7 +205,7 @@ export function saveLanguage(lang: Language): void {
 export function loadUnit(): UnitType {
   try {
     const u = localStorage.getItem(KEYS.UNIT);
-    return u === 'marla' || u === 'sqft' ? u : 'ft';
+    return u === 'm' || u === 'sqft' || u === 'sqm' ? u : 'ft';
   } catch {
     return 'ft';
   }

@@ -2,45 +2,44 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Home,
   Map,
-  Sparkles,
+  Box,
+  HardHat,
   Settings,
   CheckCircle2,
   Plus,
 } from 'lucide-react';
 import {
-  DEFAULT_CITY_RATES,
   DEFAULT_CUSTOMIZATION,
+  DEFAULT_REGION_RATES,
   TRANSLATIONS,
 } from './data/constants';
 import {
-  AllCityRates,
+  AllRegionRates,
   AppScreen,
-  CityMaterialRates,
-  CityName,
   ClientLead,
   DesignStyle,
   DesignVariation,
+  GlobalRegionCode,
   HouseCustomization,
+  InfrastructureConfig,
   Language,
-  PlanTier,
   PlotSpecs,
   Project,
+  RegionalMaterialRates,
   UnitType,
   UserProfile,
 } from './types/gharmap';
 import {
-  loadCityRates,
   loadLanguage,
   loadLeads,
-  loadPlan,
   loadProjects,
+  loadRegionRates,
   loadUnit,
   loadUser,
-  saveCityRates,
   saveLanguage,
   saveLeads,
-  savePlan,
   saveProjects,
+  saveRegionRates,
   saveUnit,
   saveUser,
 } from './utils/storage';
@@ -50,6 +49,7 @@ import { DashboardScreen } from './components/DashboardScreen';
 import { PlotDetailsScreen } from './components/PlotDetailsScreen';
 import { FloorPlan2DScreen } from './components/FloorPlan2DScreen';
 import { House3DViewScreen } from './components/House3DViewScreen';
+import { InfrastructureScreen } from './components/InfrastructureScreen';
 import { MaterialCostingScreen } from './components/MaterialCostingScreen';
 import { PricingPlansScreen } from './components/PricingPlansScreen';
 import { MyProjectsScreen } from './components/MyProjectsScreen';
@@ -58,11 +58,17 @@ import { PrintReport } from './components/PrintReport';
 import { Logo } from './components/Logo';
 
 const DEFAULT_NEW_PLOT: PlotSpecs = {
-  length: 45,
-  width: 25,
+  sides: {
+    frontWidth: 32,
+    backWidth: 32,
+    leftLength: 50,
+    rightLength: 50,
+  },
+  isIrregular: false,
   facing: 'North',
-  city: 'Lahore',
-  budget: 'Medium',
+  region: 'US',
+  category: 'Residential Home',
+  budget: 'Standard',
   counts: {
     rooms: 3,
     washrooms: 2,
@@ -74,15 +80,20 @@ const DEFAULT_NEW_PLOT: PlotSpecs = {
     store: 1,
     mumty: 1,
   },
+  infrastructure: {
+    currentFloors: 2,
+    plannedFutureFloors: 1,
+    soilType: 'Firm Clay / Loam',
+    seismicZone: 'Moderate (Zone 2)',
+  },
 };
 
 export default function App() {
   const [language, setLanguage] = useState<Language>(() => loadLanguage());
   const [unit, setUnit] = useState<UnitType>(() => loadUnit());
-  const [plan, setPlan] = useState<PlanTier>(() => loadPlan());
   const [user, setUser] = useState<UserProfile | null>(() => loadUser());
   const [projects, setProjects] = useState<Project[]>(() => loadProjects());
-  const [cityRates, setCityRates] = useState<AllCityRates>(() => loadCityRates());
+  const [regionRates, setRegionRates] = useState<AllRegionRates>(() => loadRegionRates());
   const [leads, setLeads] = useState<ClientLead[]>(() => loadLeads());
 
   const [screen, setScreen] = useState<AppScreen>('splash');
@@ -161,7 +172,7 @@ export default function App() {
         setActiveProjectId(updated.id);
         setEditingPlotProjectId(null);
         setScreen('floor-plan');
-        showToast('Updated floor plan with 3 AI variations!');
+        showToast(`Updated blueprint with ${variations.length} layout designs!`);
         return;
       }
     }
@@ -171,7 +182,7 @@ export default function App() {
       name: projectName,
       createdAt: today,
       updatedAt: today,
-      progress: 25,
+      progress: 30,
       plot,
       style,
       variations,
@@ -186,7 +197,7 @@ export default function App() {
     });
     setActiveProjectId(newProj.id);
     setScreen('floor-plan');
-    showToast('AI generated 3 floor plan designs!');
+    showToast(`Generated ${variations.length} blueprint variations!`);
   };
 
   const handleOpenProject = (id: string, targetScreen: AppScreen = 'floor-plan') => {
@@ -195,28 +206,11 @@ export default function App() {
   };
 
   const handleStartNewMap = () => {
-    // Allow 1 custom free map beyond the 2 seeded showcase projects, or unlimited on Pro/Premium
-    const customCount = projects.filter((p) => !p.id.startsWith('proj-lahore') && !p.id.startsWith('proj-peshawar')).length;
-    if (plan === 'free' && customCount >= 1) {
-      showToast('Free plan allows 1 custom project. Upgrade to Pro for up to 10!');
-      setScreen('pricing');
-      return;
-    }
     setEditingPlotProjectId(null);
     setScreen('plot-details');
   };
 
   const handleDuplicateProject = (id: string) => {
-    if (plan === 'free' && projects.length >= 3) {
-      showToast('Upgrade to Pro to duplicate and save up to 10 projects.');
-      setScreen('pricing');
-      return;
-    }
-    if (plan === 'pro' && projects.length >= 10) {
-      showToast('Pro plan supports up to 10 projects. Upgrade to Premium for unlimited!');
-      setScreen('pricing');
-      return;
-    }
     const src = projects.find((p) => p.id === id);
     if (!src) return;
     const copy: Project = {
@@ -250,35 +244,18 @@ export default function App() {
     showToast('Project deleted');
   };
 
-  const handleUpdateCityRates = (city: CityName, rates: CityMaterialRates) => {
-    setCityRates((prev) => {
-      const next = { ...prev, [city]: rates };
-      saveCityRates(next);
+  const handleUpdateRegionRates = (
+    region: GlobalRegionCode,
+    rates: RegionalMaterialRates,
+  ) => {
+    setRegionRates((prev) => {
+      const next = { ...prev, [region]: rates };
+      saveRegionRates(next);
       return next;
     });
   };
 
-  const handleSelectPlan = (nextPlan: PlanTier) => {
-    setPlan(nextPlan);
-    savePlan(nextPlan);
-    showToast(`Activated ${nextPlan.toUpperCase()} Plan!`);
-    setScreen('dashboard');
-  };
-
-  const handleUnlockSingleMap = () => {
-    if (activeProject) {
-      handleUpdateProject({ ...activeProject, unlockedSingleMap: true });
-    }
-    showToast('Unlocked full 3D, all 5 styles & BOQ PDF for current map!');
-    setScreen('floor-plan');
-  };
-
   const handleExportPDF = () => {
-    if (plan === 'free' && !activeProject?.unlockedSingleMap) {
-      showToast('Upgrade to Pro or unlock Single Map (Rs 999) to export PDF.');
-      setScreen('pricing');
-      return;
-    }
     window.print();
   };
 
@@ -297,24 +274,18 @@ export default function App() {
   }
 
   const t = TRANSLATIONS[language];
-  const plotInitial =
-    editingPlotProjectId && projects.find((p) => p.id === editingPlotProjectId)
-      ? projects.find((p) => p.id === editingPlotProjectId)!.plot
-      : DEFAULT_NEW_PLOT;
-  const styleInitial =
-    editingPlotProjectId && projects.find((p) => p.id === editingPlotProjectId)
-      ? projects.find((p) => p.id === editingPlotProjectId)!.style
-      : 'Pakistani';
-  const nameInitial =
-    editingPlotProjectId && projects.find((p) => p.id === editingPlotProjectId)
-      ? projects.find((p) => p.id === editingPlotProjectId)!.name
-      : '';
+  const editingProject = editingPlotProjectId
+    ? projects.find((p) => p.id === editingPlotProjectId)
+    : undefined;
+  const plotInitial = editingProject ? editingProject.plot : DEFAULT_NEW_PLOT;
+  const styleInitial = editingProject ? editingProject.style : 'Modern Contemporary';
+  const nameInitial = editingProject ? editingProject.name : '';
 
   return (
     <>
       <div className="no-print min-h-screen bg-[#F6F9F7] pb-24 lg:pb-12">
-        {/* Desktop 3-Zone Top Bar (hidden on small mobile where bottom nav rules) */}
-        <header className="hidden lg:flex items-center justify-between gap-8 max-w-6xl mx-auto px-6 py-4 border-b border-[#E2ECE6] bg-white/90 sticky top-0 z-30">
+        {/* Desktop Top Navigation */}
+        <header className="hidden lg:flex items-center justify-between gap-6 max-w-6xl mx-auto px-6 py-4 border-b border-[#E2ECE6] bg-white/95 sticky top-0 z-30">
           <button
             type="button"
             onClick={() => setScreen('dashboard')}
@@ -326,7 +297,7 @@ export default function App() {
             </span>
           </button>
 
-          <nav className="flex items-center gap-6 text-sm font-semibold text-[#405B4D]">
+          <nav className="flex items-center gap-5 text-sm font-semibold text-[#405B4D]">
             <button
               type="button"
               onClick={() => setScreen('dashboard')}
@@ -343,7 +314,7 @@ export default function App() {
                 screen === 'floor-plan' ? 'text-[#0E9F5D] font-bold' : ''
               }`}
             >
-              2D Plan
+              2D Blueprint
             </button>
             <button
               type="button"
@@ -352,7 +323,16 @@ export default function App() {
                 screen === 'view-3d' ? 'text-[#0E9F5D] font-bold' : ''
               }`}
             >
-              3D View
+              3D Studio
+            </button>
+            <button
+              type="button"
+              onClick={() => setScreen('infrastructure')}
+              className={`whitespace-nowrap shrink-0 hover:text-[#0E9F5D] ${
+                screen === 'infrastructure' ? 'text-[#0E9F5D] font-bold' : ''
+              }`}
+            >
+              Infrastructure
             </button>
             <button
               type="button"
@@ -361,7 +341,7 @@ export default function App() {
                 screen === 'costing' ? 'text-[#0E9F5D] font-bold' : ''
               }`}
             >
-              Costing
+              Costing BOQ
             </button>
             <button
               type="button"
@@ -374,12 +354,12 @@ export default function App() {
             </button>
             <button
               type="button"
-              onClick={() => setScreen('pricing')}
+              onClick={() => setScreen('settings')}
               className={`whitespace-nowrap shrink-0 hover:text-[#0E9F5D] ${
-                screen === 'pricing' ? 'text-[#0E9F5D] font-bold' : ''
+                screen === 'settings' ? 'text-[#0E9F5D] font-bold' : ''
               }`}
             >
-              Pricing
+              {t.settings}
             </button>
           </nav>
 
@@ -399,9 +379,8 @@ export default function App() {
             <DashboardScreen
               language={language}
               user={user}
-              plan={plan}
               projects={projects}
-              cityRates={cityRates}
+              regionRates={regionRates}
               onNavigate={setScreen}
               onOpenProject={handleOpenProject}
               onStartNewMap={handleStartNewMap}
@@ -412,12 +391,10 @@ export default function App() {
           {screen === 'plot-details' && (
             <PlotDetailsScreen
               language={language}
-              plan={plan}
               initialPlot={plotInitial}
               initialStyle={styleInitial}
               initialProjectName={nameInitial}
               onBack={() => setScreen('dashboard')}
-              onUpgradeRequest={() => setScreen('pricing')}
               onCompleteGeneration={handleCompleteGeneration}
             />
           )}
@@ -425,14 +402,13 @@ export default function App() {
           {screen === 'floor-plan' && activeProject && (
             <FloorPlan2DScreen
               language={language}
-              plan={plan}
               project={activeProject}
               onBack={() => setScreen('dashboard')}
               onSwitchTo3D={() => setScreen('view-3d')}
               onSwitchToCosting={() => setScreen('costing')}
+              onSwitchToInfra={() => setScreen('infrastructure')}
               onUpdateProject={handleUpdateProject}
               onExportPDF={handleExportPDF}
-              onUpgradeRequest={() => setScreen('pricing')}
               onShowToast={showToast}
             />
           )}
@@ -440,7 +416,6 @@ export default function App() {
           {screen === 'view-3d' && activeProject && (
             <House3DViewScreen
               language={language}
-              plan={plan}
               project={activeProject}
               onBack={() => setScreen('floor-plan')}
               onSwitchTo2D={() => setScreen('floor-plan')}
@@ -451,27 +426,44 @@ export default function App() {
                   updatedAt: new Date().toISOString().slice(0, 10),
                 })
               }
-              onUpgradeRequest={() => setScreen('pricing')}
               onShowToast={showToast}
+            />
+          )}
+
+          {screen === 'infrastructure' && activeProject && (
+            <InfrastructureScreen
+              language={language}
+              project={activeProject}
+              onBack={() => setScreen('floor-plan')}
+              onUpdateInfrastructure={(infra: InfrastructureConfig) => {
+                handleUpdateProject({
+                  ...activeProject,
+                  plot: {
+                    ...activeProject.plot,
+                    infrastructure: infra,
+                  },
+                  updatedAt: new Date().toISOString().slice(0, 10),
+                });
+              }}
+              onOpen2D={() => setScreen('floor-plan')}
+              onOpen3D={() => setScreen('view-3d')}
             />
           )}
 
           {screen === 'costing' && activeProject && (
             <MaterialCostingScreen
               language={language}
-              plan={plan}
               project={activeProject}
-              cityRates={cityRates}
+              regionRates={regionRates}
               onBack={() => setScreen('dashboard')}
-              onUpdateProjectCity={(city: CityName) =>
+              onUpdateProjectRegion={(region: GlobalRegionCode) =>
                 handleUpdateProject({
                   ...activeProject,
-                  plot: { ...activeProject.plot, city },
+                  plot: { ...activeProject.plot, region },
                 })
               }
-              onUpdateCityRates={handleUpdateCityRates}
+              onUpdateRegionRates={handleUpdateRegionRates}
               onExportPDF={handleExportPDF}
-              onUpgradeRequest={() => setScreen('pricing')}
               onShowToast={showToast}
             />
           )}
@@ -479,19 +471,17 @@ export default function App() {
           {screen === 'pricing' && (
             <PricingPlansScreen
               language={language}
-              currentPlan={plan}
               onBack={() => setScreen('dashboard')}
-              onSelectPlan={handleSelectPlan}
-              onUnlockSingleMap={handleUnlockSingleMap}
+              onOpenNewMap={handleStartNewMap}
+              onOpenInfra={() => setScreen('infrastructure')}
             />
           )}
 
           {screen === 'projects' && (
             <MyProjectsScreen
               language={language}
-              plan={plan}
               projects={projects}
-              cityRates={cityRates}
+              regionRates={regionRates}
               leads={leads}
               onBack={() => setScreen('dashboard')}
               onCreateNew={handleStartNewMap}
@@ -516,7 +506,6 @@ export default function App() {
                 });
                 showToast('Added client & contractor quote!');
               }}
-              onUpgradeRequest={() => setScreen('pricing')}
             />
           )}
 
@@ -524,9 +513,8 @@ export default function App() {
             <SettingsScreen
               language={language}
               unit={unit}
-              plan={plan}
               user={user}
-              cityRates={cityRates}
+              regionRates={regionRates}
               onBack={() => setScreen('dashboard')}
               onChangeLanguage={(lang) => {
                 setLanguage(lang);
@@ -536,26 +524,25 @@ export default function App() {
                 setUnit(u);
                 saveUnit(u);
               }}
-              onUpdateCityRates={handleUpdateCityRates}
+              onUpdateRegionRates={handleUpdateRegionRates}
               onResetAllRates={() => {
-                setCityRates(DEFAULT_CITY_RATES);
-                saveCityRates(DEFAULT_CITY_RATES);
+                setRegionRates(DEFAULT_REGION_RATES);
+                saveRegionRates(DEFAULT_REGION_RATES);
               }}
               onUpdateUser={(u) => {
                 setUser(u);
                 saveUser(u);
               }}
-              onOpenPricing={() => setScreen('pricing')}
               onSignOut={handleSignOut}
               onShowToast={showToast}
             />
           )}
         </main>
 
-        {/* Mobile Bottom Navigation Bar matching Screenshot 6 (Home, Maps, AI/3D, Settings) */}
+        {/* Mobile Bottom Navigation Bar */}
         <nav
           aria-label="Mobile Navigation"
-          className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-[#DCE8E1] h-16 px-2 grid grid-cols-4 items-center shadow-sm"
+          className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-[#DCE8E1] h-16 px-1 grid grid-cols-5 items-center shadow-sm"
         >
           <button
             type="button"
@@ -565,7 +552,7 @@ export default function App() {
             }`}
           >
             <Home className="w-5 h-5" />
-            <span className="text-[11px] font-bold mt-0.5">{t.home}</span>
+            <span className="text-[10px] font-bold mt-0.5">{t.home}</span>
           </button>
 
           <button
@@ -578,7 +565,7 @@ export default function App() {
             }`}
           >
             <Map className="w-5 h-5" />
-            <span className="text-[11px] font-bold mt-0.5">{t.maps}</span>
+            <span className="text-[10px] font-bold mt-0.5">{t.maps}</span>
           </button>
 
           <button
@@ -590,8 +577,19 @@ export default function App() {
                 : 'text-[#627B6E]'
             }`}
           >
-            <Sparkles className="w-5 h-5" />
-            <span className="text-[11px] font-bold mt-0.5">{t.ai}</span>
+            <Box className="w-5 h-5" />
+            <span className="text-[10px] font-bold mt-0.5">{t.ai}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setScreen('infrastructure')}
+            className={`flex flex-col items-center justify-center min-h-[48px] ${
+              screen === 'infrastructure' ? 'text-[#0E9F5D]' : 'text-[#627B6E]'
+            }`}
+          >
+            <HardHat className="w-5 h-5" />
+            <span className="text-[10px] font-bold mt-0.5">{t.infra}</span>
           </button>
 
           <button
@@ -604,7 +602,7 @@ export default function App() {
             }`}
           >
             <Settings className="w-5 h-5" />
-            <span className="text-[11px] font-bold mt-0.5">{t.settings}</span>
+            <span className="text-[10px] font-bold mt-0.5">{t.settings}</span>
           </button>
         </nav>
 
@@ -621,8 +619,7 @@ export default function App() {
       {activeProject && (
         <PrintReport
           project={activeProject}
-          cityRates={cityRates}
-          plan={plan}
+          regionRates={regionRates}
           user={user}
         />
       )}

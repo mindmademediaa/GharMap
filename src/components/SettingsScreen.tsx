@@ -4,19 +4,23 @@ import {
   Globe,
   Ruler,
   Sliders,
-  Crown,
   LogOut,
   Check,
   RotateCcw,
   Building2,
+  Sparkles,
 } from 'lucide-react';
-import { CITIES, DEFAULT_CITY_RATES, TRANSLATIONS } from '../data/constants';
 import {
-  AllCityRates,
-  CityMaterialRates,
-  CityName,
+  DEFAULT_REGION_RATES,
+  GLOBAL_REGIONS,
+  TRANSLATIONS,
+  getRegionConfig,
+} from '../data/constants';
+import {
+  AllRegionRates,
+  GlobalRegionCode,
   Language,
-  PlanTier,
+  RegionalMaterialRates,
   UnitType,
   UserProfile,
 } from '../types/gharmap';
@@ -24,16 +28,14 @@ import {
 interface SettingsScreenProps {
   language: Language;
   unit: UnitType;
-  plan: PlanTier;
   user: UserProfile;
-  cityRates: AllCityRates;
+  regionRates: AllRegionRates;
   onBack: () => void;
   onChangeLanguage: (lang: Language) => void;
   onChangeUnit: (unit: UnitType) => void;
-  onUpdateCityRates: (city: CityName, rates: CityMaterialRates) => void;
+  onUpdateRegionRates: (region: GlobalRegionCode, rates: RegionalMaterialRates) => void;
   onResetAllRates: () => void;
   onUpdateUser: (user: UserProfile) => void;
-  onOpenPricing: () => void;
   onSignOut: () => void;
   onShowToast: (msg: string) => void;
 }
@@ -41,33 +43,35 @@ interface SettingsScreenProps {
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   language,
   unit,
-  plan,
   user,
-  cityRates,
+  regionRates,
   onBack,
   onChangeLanguage,
   onChangeUnit,
-  onUpdateCityRates,
+  onUpdateRegionRates,
   onResetAllRates,
   onUpdateUser,
-  onOpenPricing,
   onSignOut,
   onShowToast,
 }) => {
   const t = TRANSLATIONS[language];
-  const [selectedCity, setSelectedCity] = useState<CityName>('Lahore');
-  const [draftRates, setDraftRates] = useState<CityMaterialRates>(cityRates.Lahore);
-  const [companyName, setCompanyName] = useState(user.companyName || 'Al-Noor Builders');
+  const [selectedRegion, setSelectedRegion] = useState<GlobalRegionCode>('US');
+  const [draftRates, setDraftRates] = useState<RegionalMaterialRates>(regionRates.US);
+  const [companyName, setCompanyName] = useState(
+    user.companyName || 'GharMap Studio & Associates',
+  );
 
-  const handleCitySelect = (city: CityName) => {
-    setSelectedCity(city);
-    setDraftRates(cityRates[city]);
+  const regConfig = getRegionConfig(selectedRegion);
+
+  const handleRegionSelect = (code: GlobalRegionCode) => {
+    setSelectedRegion(code);
+    setDraftRates(regionRates[code]);
   };
 
   const handleSaveRates = (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateCityRates(selectedCity, draftRates);
-    onShowToast(`Admin Panel: Saved ${selectedCity} PKR material rates!`);
+    onUpdateRegionRates(selectedRegion, draftRates);
+    onShowToast(`Saved ${regConfig.countryName} material rates!`);
   };
 
   return (
@@ -82,7 +86,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-xl font-extrabold text-[#112A1E]">{t.settings} & Admin Panel</h1>
+          <h1 className="text-xl font-extrabold text-[#112A1E]">{t.settings} &amp; Regional Rates</h1>
         </div>
         <button
           type="button"
@@ -95,36 +99,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Left: Language, Units, Plan & White-label */}
         <div className="lg:col-span-5 space-y-4">
-          {/* Language & Units */}
           <div className="bg-white border border-[#DCE8E1] rounded-3xl p-5 space-y-4 shadow-xs">
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Globe className="w-4 h-4 text-[#0E9F5D]" />
-                <span className="text-sm font-extrabold text-[#112A1E]">
-                  Language / زبان
-                </span>
+                <span className="text-sm font-extrabold text-[#112A1E]">Language / زبان</span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => onChangeLanguage('en')}
                   className={`min-h-[44px] rounded-xl text-sm font-bold ${
-                    language === 'en'
-                      ? 'bg-[#0E9F5D] text-white'
-                      : 'bg-[#F4F8F5] text-[#405B4D]'
+                    language === 'en' ? 'bg-[#0E9F5D] text-white' : 'bg-[#F4F8F5] text-[#405B4D]'
                   }`}
                 >
-                  English
+                  English (Global)
                 </button>
                 <button
                   type="button"
                   onClick={() => onChangeLanguage('ur')}
                   className={`min-h-[44px] rounded-xl text-sm font-bold urdu-font ${
-                    language === 'ur'
-                      ? 'bg-[#0E9F5D] text-white'
-                      : 'bg-[#F4F8F5] text-[#405B4D]'
+                    language === 'ur' ? 'bg-[#0E9F5D] text-white' : 'bg-[#F4F8F5] text-[#405B4D]'
                   }`}
                 >
                   اردو (Urdu)
@@ -139,12 +135,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   Measurement Units
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-1.5">
                 {(
                   [
-                    ['ft', 'Feet (ft)'],
-                    ['marla', 'Marla'],
+                    ['ft', 'Feet'],
+                    ['m', 'Meters'],
                     ['sqft', 'Sq Ft'],
+                    ['sqm', 'm²'],
                   ] as [UnitType, string][]
                 ).map(([u, label]) => (
                   <button
@@ -152,9 +149,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     type="button"
                     onClick={() => onChangeUnit(u)}
                     className={`min-h-[42px] rounded-xl text-xs font-bold ${
-                      unit === u
-                        ? 'bg-[#0E9F5D] text-white'
-                        : 'bg-[#F4F8F5] text-[#405B4D]'
+                      unit === u ? 'bg-[#0E9F5D] text-white' : 'bg-[#F4F8F5] text-[#405B4D]'
                     }`}
                   >
                     {label}
@@ -164,48 +159,39 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </div>
           </div>
 
-          {/* Subscription Status */}
           <div className="bg-[#E7F6EE] border border-[#0E9F5D]/20 rounded-3xl p-5 flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold text-[#405B4D]">Active Subscription</p>
-              <p className="text-lg font-extrabold text-[#112A1E] capitalize flex items-center gap-1.5 mt-0.5">
-                <Crown className="w-5 h-5 text-[#0E9F5D]" />
-                {plan} Plan
+              <p className="text-xs font-semibold text-[#405B4D]">Access Tier</p>
+              <p className="text-base font-extrabold text-[#112A1E] flex items-center gap-1.5 mt-0.5">
+                <Sparkles className="w-4 h-4 text-[#0E9F5D]" />
+                100% Free Global Access
+              </p>
+              <p className="text-xs text-[#405B4D] mt-0.5">
+                All blueprints, 3D Studio, Infra &amp; PDF exports unlocked.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onOpenPricing}
-              className="min-h-[44px] px-4 rounded-2xl bg-[#0E9F5D] text-white text-xs font-bold"
-            >
-              Manage Plan
-            </button>
           </div>
 
-          {/* White-Label PDF Branding (Premium) */}
           <div className="bg-white border border-[#DCE8E1] rounded-3xl p-5 space-y-3 shadow-xs">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-[#0E9F5D]" />
-                <h2 className="text-sm font-extrabold text-[#112A1E]">
-                  White-Label PDF Company Name
-                </h2>
-              </div>
-              <span className="text-[11px] font-bold text-[#0E9F5D]">Premium</span>
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-[#0E9F5D]" />
+              <h2 className="text-sm font-extrabold text-[#112A1E]">
+                White-Label PDF Firm Name
+              </h2>
             </div>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="Your Construction Firm Name"
+                placeholder="Architecture / Developer Firm"
                 className="flex-1 min-h-[44px] px-3.5 rounded-xl bg-[#F4F8F5] border border-[#DCE8E1] text-sm"
               />
               <button
                 type="button"
                 onClick={() => {
                   onUpdateUser({ ...user, companyName: companyName.trim() });
-                  onShowToast('Saved company branding for White-Label PDFs!');
+                  onShowToast('Saved firm branding for PDF reports!');
                 }}
                 className="min-h-[44px] px-4 rounded-xl bg-[#112A1E] text-white text-xs font-bold"
               >
@@ -215,7 +201,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
         </div>
 
-        {/* Right: Admin Panel — Editable City Material Rates */}
         <form
           onSubmit={handleSaveRates}
           className="lg:col-span-7 bg-white border border-[#DCE8E1] rounded-3xl p-5 space-y-4 shadow-xs"
@@ -225,10 +210,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Sliders className="w-5 h-5 text-[#0E9F5D]" />
               <div>
                 <h2 className="text-base font-extrabold text-[#112A1E]">
-                  Admin Panel · City Material Rates (PKR)
+                  Global Regional Material Rates Editor
                 </h2>
                 <p className="text-xs text-[#546E60]">
-                  Customize cement, bricks, steel, sand, bajri & labour rates per city
+                  Customize unit prices for any country &amp; currency
                 </p>
               </div>
             </div>
@@ -236,8 +221,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               type="button"
               onClick={() => {
                 onResetAllRates();
-                setDraftRates(DEFAULT_CITY_RATES[selectedCity]);
-                onShowToast('Reset all city rates to Pakistan market defaults');
+                setDraftRates(DEFAULT_REGION_RATES[selectedRegion]);
+                onShowToast('Reset all global rates to defaults');
               }}
               className="text-xs font-bold text-[#546E60] hover:text-[#0E9F5D] flex items-center gap-1 min-h-[36px]"
             >
@@ -247,18 +232,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
 
           <div className="flex flex-wrap gap-1.5">
-            {CITIES.map((city) => (
+            {GLOBAL_REGIONS.map((r) => (
               <button
-                key={city}
+                key={r.code}
                 type="button"
-                onClick={() => handleCitySelect(city)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
-                  selectedCity === city
+                onClick={() => handleRegionSelect(r.code)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                  selectedRegion === r.code
                     ? 'bg-[#0E9F5D] text-white'
                     : 'bg-[#F4F8F5] text-[#405B4D] hover:bg-[#E7F6EE]'
                 }`}
               >
-                {city}
+                {r.code} ({r.currencyCode})
               </button>
             ))}
           </div>
@@ -266,31 +251,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             {(
               [
-                ['cementPerBag', 'Cement (PKR/Bag)'],
-                ['brickPerPc', 'Brick (PKR/Pc)'],
-                ['steelPerKg', 'Steel (PKR/Kg)'],
-                ['sandPerCft', 'Sand (PKR/Cft)'],
-                ['bajriPerCft', 'Bajri (PKR/Cft)'],
-                ['tilesPerSqFt', 'Tiles (PKR/SqFt)'],
-                ['paintPerSqFt', 'Paint (PKR/SqFt)'],
-                ['labourPerSqFt', 'Labour (PKR/SqFt)'],
-              ] as [keyof CityMaterialRates, string][]
+                ['cementPerBag', 'Cement / Bag'],
+                ['brickPerPc', 'Brick / Pc'],
+                ['steelPerKg', 'Steel / Kg'],
+                ['sandPerCft', 'Sand / Cft'],
+                ['bajriPerCft', 'Aggregate / Cft'],
+                ['tilesPerSqFt', 'Tiles / Sq Ft'],
+                ['paintPerSqFt', 'Paint / Sq Ft'],
+                ['labourPerSqFt', 'Labour / Sq Ft'],
+              ] as [keyof RegionalMaterialRates, string][]
             ).map(([field, label]) => (
               <div key={field}>
                 <label className="block font-semibold text-[#405B4D] mb-1">
-                  {label}
+                  {label} ({regConfig.currencyCode})
                 </label>
                 <input
                   type="number"
-                  step="0.5"
+                  step="0.05"
                   value={draftRates[field]}
                   onChange={(e) =>
                     setDraftRates((prev) => ({
                       ...prev,
-                      [field]: Math.max(1, Number(e.target.value) || 0),
+                      [field]: Math.max(0.05, Number(e.target.value) || 0),
                     }))
                   }
-                  className="w-full min-h-[42px] px-3 rounded-xl bg-[#F4F8F5] border border-[#DCE8E1] font-bold text-[#112A1E] tabular-nums focus:outline-none focus:ring-2 focus:ring-[#0E9F5D]"
+                  className="w-full min-h-[42px] px-3 rounded-xl bg-[#F4F8F5] border border-[#DCE8E1] font-bold text-[#112A1E] tabular-nums"
                 />
               </div>
             ))}
@@ -301,7 +286,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             className="w-full min-h-[48px] rounded-2xl bg-[#0E9F5D] hover:bg-[#0A7D49] text-white font-bold text-sm flex items-center justify-center gap-2"
           >
             <Check className="w-4 h-4" />
-            <span>Save {selectedCity} Rates</span>
+            <span>Save {regConfig.countryName} Rates</span>
           </button>
         </form>
       </div>

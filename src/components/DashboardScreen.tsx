@@ -8,26 +8,29 @@ import {
   Banknote,
   ArrowRight,
   User,
-  Crown,
+  HardHat,
+  Globe,
 } from 'lucide-react';
 import { Logo } from './Logo';
-import { TRANSLATIONS } from '../data/constants';
+import { TRANSLATIONS, getRegionConfig } from '../data/constants';
 import {
-  AllCityRates,
+  AllRegionRates,
   AppScreen,
   Language,
-  PlanTier,
   Project,
   UserProfile,
 } from '../types/gharmap';
-import { calculateMaterialCosting, formatCompactPKR } from '../utils/calculations';
+import {
+  calculateMaterialCosting,
+  calculatePlotAreaSqFt,
+  formatCompactCurrency,
+} from '../utils/calculations';
 
 interface DashboardScreenProps {
   language: Language;
   user: UserProfile;
-  plan: PlanTier;
   projects: Project[];
-  cityRates: AllCityRates;
+  regionRates: AllRegionRates;
   onNavigate: (screen: AppScreen) => void;
   onOpenProject: (projectId: string, targetScreen?: AppScreen) => void;
   onStartNewMap: () => void;
@@ -37,25 +40,26 @@ interface DashboardScreenProps {
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   language,
   user,
-  plan,
   projects,
-  cityRates,
+  regionRates,
   onNavigate,
   onOpenProject,
   onStartNewMap,
   onToggleLanguage,
 }) => {
   const t = TRANSLATIONS[language];
-  const recent = projects.slice(0, 2);
+  const recent = projects.slice(0, 3);
+  const firstProj = projects[0];
+  const primaryRegion = firstProj ? firstProj.plot.region : 'US';
 
-  const totalEstCost = projects.reduce((sum, p) => {
-    const cost = calculateMaterialCosting(p.plot, cityRates[p.plot.city]);
+  const totalPortfolioEst = projects.reduce((sum, p) => {
+    const cost = calculateMaterialCosting(p.plot, regionRates[p.plot.region]);
     return sum + cost.grandTotal;
   }, 0);
 
   return (
     <div className="space-y-6">
-      {/* Header matching screenshot */}
+      {/* Top Brand Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <Logo size={42} variant="pin" />
@@ -63,29 +67,25 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <h1 className="text-2xl font-extrabold tracking-tight text-[#112A1E] truncate">
               {t.appName}
             </h1>
+            <p className="text-xs text-[#546E60] truncate flex items-center gap-1">
+              <Globe className="w-3 h-3 text-[#0E9F5D]" />
+              <span>Global Homes, Markets &amp; Infrastructure</span>
+            </p>
           </div>
         </div>
+
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={onToggleLanguage}
             className="min-h-[40px] px-3 rounded-xl bg-[#E7F6EE] text-[#0E9F5D] text-xs font-bold hover:bg-[#D5EFE1] transition-colors"
-            title="Switch English / Urdu"
           >
             {language === 'en' ? 'اردو' : 'EN'}
           </button>
           <button
             type="button"
-            onClick={() => onNavigate('pricing')}
-            className="min-h-[40px] px-3 rounded-xl bg-white border border-[#DCE8E1] text-xs font-bold text-[#112A1E] hover:border-[#0E9F5D] flex items-center gap-1.5 transition-colors"
-          >
-            <Crown className="w-3.5 h-3.5 text-[#0E9F5D]" />
-            <span className="capitalize">{plan}</span>
-          </button>
-          <button
-            type="button"
             onClick={() => onNavigate('settings')}
-            aria-label="Account Settings"
+            aria-label="Settings"
             className="w-11 h-11 rounded-full bg-white border border-[#0E9F5D]/40 flex items-center justify-center text-[#0E9F5D] hover:bg-[#E7F6EE] transition-colors"
           >
             <User className="w-5 h-5" />
@@ -101,24 +101,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </p>
           <p className="text-sm text-[#456252]">{t.readyPrompt}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => onNavigate('pricing')}
-          className="self-start sm:self-center text-xs font-semibold text-[#0E9F5D] hover:underline whitespace-nowrap"
-        >
-          {plan === 'free' ? 'Upgrade to Pro →' : `${plan.toUpperCase()} Member`}
-        </button>
+        <span className="self-start sm:self-center text-xs font-bold text-[#0E9F5D] bg-white px-3 py-1.5 rounded-xl border border-[#0E9F5D]/20 whitespace-nowrap">
+          All Features Free &amp; Unlocked
+        </span>
       </div>
 
-      {/* Main Dashboard Grid: Actions + Recent Projects */}
+      {/* Main Dashboard Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left column: Primary Action Cards */}
         <div className="lg:col-span-7 space-y-3.5">
-          <h2 className="text-base font-bold text-[#112A1E] text-center lg:text-left">
-            {t.homeDashboard}
-          </h2>
+          <h2 className="text-base font-bold text-[#112A1E]">{t.homeDashboard}</h2>
 
-          {/* Create New Map - Primary Solid Green Card */}
           <button
             type="button"
             onClick={onStartNewMap}
@@ -134,37 +126,54 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <ArrowRight className="w-5 h-5 text-white/90 shrink-0" />
           </button>
 
-          {/* Estimate Cost */}
           <button
             type="button"
-            onClick={() => onNavigate('costing')}
+            onClick={() => onNavigate('infrastructure')}
             className="w-full text-left bg-white hover:border-[#0E9F5D] border border-[#DCE8E1] active:scale-[0.99] transition-all rounded-2xl p-4 sm:p-5 flex items-center gap-4 shadow-xs"
           >
             <div className="w-14 h-14 rounded-2xl bg-[#E7F6EE] flex items-center justify-center shrink-0">
-              <Calculator className="w-7 h-7 text-[#0E9F5D]" />
+              <HardHat className="w-7 h-7 text-[#0E9F5D]" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-lg font-bold text-[#112A1E] leading-tight">{t.estimateCost}</p>
-              <p className="text-xs sm:text-sm text-[#546E60] mt-1">{t.estimateCostSub}</p>
+              <p className="text-lg font-bold text-[#112A1E] leading-tight">
+                Infrastructure &amp; Pillar Engineering
+              </p>
+              <p className="text-xs sm:text-sm text-[#546E60] mt-1">
+                Column sizes, foundations, beams &amp; future floor load planning
+              </p>
             </div>
             <ArrowRight className="w-5 h-5 text-[#7A9486] shrink-0" />
           </button>
 
-          {/* My Projects */}
-          <button
-            type="button"
-            onClick={() => onNavigate('projects')}
-            className="w-full text-left bg-white hover:border-[#0E9F5D] border border-[#DCE8E1] active:scale-[0.99] transition-all rounded-2xl p-4 sm:p-5 flex items-center gap-4 shadow-xs"
-          >
-            <div className="w-14 h-14 rounded-2xl bg-[#E7F6EE] flex items-center justify-center shrink-0">
-              <FolderOpen className="w-7 h-7 text-[#0E9F5D]" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-lg font-bold text-[#112A1E] leading-tight">{t.myProjects}</p>
-              <p className="text-xs sm:text-sm text-[#546E60] mt-1">{t.myProjectsSub}</p>
-            </div>
-            <ArrowRight className="w-5 h-5 text-[#7A9486] shrink-0" />
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <button
+              type="button"
+              onClick={() => onNavigate('costing')}
+              className="w-full text-left bg-white hover:border-[#0E9F5D] border border-[#DCE8E1] rounded-2xl p-4 flex items-center gap-3.5 shadow-xs"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-[#E7F6EE] flex items-center justify-center shrink-0">
+                <Calculator className="w-6 h-6 text-[#0E9F5D]" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-base font-bold text-[#112A1E]">{t.estimateCost}</p>
+                <p className="text-xs text-[#546E60] truncate">{t.estimateCostSub}</p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigate('projects')}
+              className="w-full text-left bg-white hover:border-[#0E9F5D] border border-[#DCE8E1] rounded-2xl p-4 flex items-center gap-3.5 shadow-xs"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-[#E7F6EE] flex items-center justify-center shrink-0">
+                <FolderOpen className="w-6 h-6 text-[#0E9F5D]" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-base font-bold text-[#112A1E]">{t.myProjects}</p>
+                <p className="text-xs text-[#546E60] truncate">{t.myProjectsSub}</p>
+              </div>
+            </button>
+          </div>
         </div>
 
         {/* Right column: Recent Projects + Summary KPIs */}
@@ -183,7 +192,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
           <div className="space-y-3">
             {recent.map((proj) => {
-              const marla = ((proj.plot.length * proj.plot.width) / 225).toFixed(1);
+              const areaSqFt = calculatePlotAreaSqFt(proj.plot.sides);
+              const reg = getRegionConfig(proj.plot.region);
               return (
                 <button
                   key={proj.id}
@@ -196,10 +206,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                       <p className="text-sm sm:text-base font-bold text-[#112A1E] truncate">
                         {proj.name}
                       </p>
-                      <div className="flex items-center gap-2 text-xs text-[#546E60] mt-1">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-[#546E60] mt-1">
                         <Calendar className="w-3.5 h-3.5 text-[#0E9F5D] shrink-0" />
                         <span>
-                          {proj.plot.city} · {marla} Marla · {proj.progress}% complete
+                          {proj.plot.category} · {areaSqFt.toLocaleString()} sq ft ·{' '}
+                          {proj.plot.infrastructure.currentFloors}F · {reg.currencyCode}
                         </span>
                       </div>
                     </div>
@@ -220,7 +231,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             })}
           </div>
 
-          {/* 2-Card Summary KPIs matching screenshot */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-[#E7F6EE] rounded-2xl p-4 flex items-center gap-3">
               <TrendingUp className="w-6 h-6 text-[#0E9F5D] shrink-0" />
@@ -235,7 +245,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               <Banknote className="w-6 h-6 text-[#0E9F5D] shrink-0" />
               <div className="min-w-0">
                 <p className="text-sm font-extrabold text-[#112A1E] tabular-nums truncate">
-                  {formatCompactPKR(totalEstCost)}
+                  {formatCompactCurrency(totalPortfolioEst, primaryRegion)}
                 </p>
                 <p className="text-xs text-[#546E60]">{t.estCost}</p>
               </div>
