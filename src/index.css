@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Noto Sans Arabic", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-brand: #0E9F5D;
+  --color-brand-dark: #0A7D49;
+  --color-brand-light: #E7F6EE;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: #F6F9F7;
+    color: #112A1E;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.urdu-font {
+  font-family: "Noto Sans Arabic", "Plus Jakarta Sans", sans-serif;
+  line-height: 1.8;
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(14, 159, 93, 0.25);
+  border-radius: 999px;
+}
+
+/* Print / PDF Export Styling */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}
+
+.print-only {
+  display: none;
+}
